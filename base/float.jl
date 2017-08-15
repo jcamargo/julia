@@ -1,5 +1,7 @@
 # This file is a part of Julia. License is MIT: https://julialang.org/license
 
+const IEEEFloat = Union{Float16, Float32, Float64}
+
 ## floating point traits ##
 
 """
@@ -585,7 +587,7 @@ uabs(x::Signed) = unsigned(abs(x))
 The result of `n` iterative applications of `nextfloat` to `x` if `n >= 0`, or `-n`
 applications of `prevfloat` if `n < 0`.
 """
-function nextfloat(f::Union{Float16,Float32,Float64}, d::Integer)
+function nextfloat(f::IEEEFloat, d::Integer)
     F = typeof(f)
     fumax = reinterpret(Unsigned, F(Inf))
     U = typeof(fumax)
@@ -686,10 +688,12 @@ for Ti in (Int8, Int16, Int32, Int64, Int128, UInt8, UInt16, UInt32, UInt64, UIn
     end
 end
 
-@eval begin
-    issubnormal(x::Float32) = (abs(x) < $(bitcast(Float32, 0x00800000))) & (x!=0)
-    issubnormal(x::Float64) = (abs(x) < $(bitcast(Float64, 0x0010000000000000))) & (x!=0)
+function issubnormal(x::T) where {T<:IEEEFloat}
+    y = reinterpret(fpinttype(T), x)
+    (y & exponent_mask(T) == 0) & (y & significand_mask(T) != 0)
+end
 
+@eval begin
     typemin(::Type{Float16}) = $(bitcast(Float16, 0xfc00))
     typemax(::Type{Float16}) = $(Inf16)
     typemin(::Type{Float32}) = $(-Inf32)
@@ -825,28 +829,7 @@ fpinttype(::Type{Float64}) = UInt64
 fpinttype(::Type{Float32}) = UInt32
 fpinttype(::Type{Float16}) = UInt16
 
-## TwicePrecision utilities
-# The numeric constants are half the number of bits in the mantissa
-for (F, T, n) in ((Float16, UInt16, 5), (Float32, UInt32, 12), (Float64, UInt64, 26))
-    @eval begin
-        function truncbits(x::$F, nb)
-            @_inline_meta
-            truncmask(x, typemax($T) << nb)
-        end
-        function truncmask(x::$F, mask)
-            @_inline_meta
-            reinterpret($F, mask & reinterpret($T, x))
-        end
-        function splitprec(x::$F)
-            @_inline_meta
-            hi = truncmask(x, typemax($T) << $n)
-            hi, x-hi
-        end
-    end
-end
-
-truncbits(x, nb) = x
-truncmask(x, mask) = x
+Base.iszero(x::Float16) = reinterpret(UInt16, x) & ~sign_mask(Float16) == 0x0000
 
 ## Array operations on floating point numbers ##
 
