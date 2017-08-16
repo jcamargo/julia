@@ -347,14 +347,35 @@ problematic for performance, so the results need to be used judiciously.
 See [`@code_warntype`](@ref man-code-warntype) for more information.
 """
 function code_warntype(io::IO, f, @nospecialize(t))
+    function is_variable_used(bodies::Vector, slotnames, v)
+        for body in bodies
+            is_variable_used(body, slotnames, v) && return true
+        end
+        return false
+    end
+
+    function is_variable_used(expr::Expr, slotnames, v)
+        for arg in expr.args
+            is_variable_used(arg, slotnames, v) && return true
+        end
+        return false
+    end
+
+    is_variable_used(arg::SlotNumber, slotnames, v) = slotnames[arg.id] == v
+    is_variable_used(arg, slotnames, v) = false
+
     emph_io = IOContext(io, :TYPEEMPHASIZE => true)
     for (src, rettype) in code_typed(f, t)
         println(emph_io, "Variables:")
         slotnames = sourceinfo_slotnames(src)
         for i = 1:length(slotnames)
             print(emph_io, "  ", slotnames[i])
+            isused = is_variable_used(src.code, slotnames, slotnames[i])
             if isa(src.slottypes, Array)
-                show_expr_type(emph_io, src.slottypes[i], true)
+                show_expr_type(emph_io, src.slottypes[i], isused)
+            end
+            if !isused
+                print(emph_io, " (Unused in body)")
             end
             print(emph_io, '\n')
         end
